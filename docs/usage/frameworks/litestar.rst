@@ -70,6 +70,47 @@ Define your SQLAlchemy models using Advanced Alchemy's enhanced base classes:
         author_id: Mapped[UUID] = mapped_column(ForeignKey("author.id"))
         author: Mapped[AuthorModel] = relationship(lazy="joined", innerjoin=True, viewonly=True)
 
+Using Properties with DTOs
+---------------------------
+
+SQLAlchemyDTO includes Python ``@property`` and ``@functools.cached_property`` decorated methods as read-only fields.
+
+.. code-block:: python
+
+    from functools import cached_property
+    from sqlalchemy.orm import Mapped, mapped_column, MappedAsDataclass
+    from advanced_alchemy.extensions.litestar import base, SQLAlchemyDTO
+
+    class UserModel(base.UUIDAuditBase, MappedAsDataclass):
+        __tablename__ = "user"
+
+        first_name: Mapped[str]
+        last_name: Mapped[str]
+
+        @property
+        def full_name(self) -> str:
+            return f"{self.first_name} {self.last_name}"
+
+        @cached_property
+        def name_length(self) -> int:
+            return len(self.full_name)
+
+    # DTO includes: id, created_at, updated_at, first_name, last_name,
+    # full_name (read-only), name_length (read-only)
+    UserDTO = SQLAlchemyDTO[UserModel]
+
+Property handling characteristics:
+
+- Detected from model class and mixins
+- Marked as ``READ_ONLY`` (cannot be set via DTO)
+- Type inferred from return type annotations
+- Private properties (starting with ``_``) excluded
+- Skipped if already handled by SQLAlchemy descriptors (e.g., ``hybrid_property``)
+
+.. note::
+
+    Properties with setters (``@property.setter``) are marked ``READ_ONLY``. Setter support is not implemented.
+
 Pydantic Schemas
 ----------------
 
@@ -478,7 +519,6 @@ To use the SQLAlchemy session backend, you need to:
 
     # 3. Configure session backend
     session_config = ServerSideSessionConfig(
-        secret="your-secret-key-here",  # Use a secure secret in production
         max_age=3600,  # 1 hour
     )
 
@@ -652,34 +692,17 @@ The session table created by ``SessionModelMixin`` has the following structure:
 Security Considerations
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-**Secret Key Management**
-
-Always use a secure secret key for session encryption:
-
-.. code-block:: python
-
-    import secrets
-
-    # Generate a secure random secret
-    secret_key = secrets.token_urlsafe(32)
-
-    session_config = ServerSideSessionConfig(
-        secret=secret_key,
-        max_age=3600,
-        https_only=True,  # Require HTTPS in production
-        samesite="strict",  # CSRF protection
-    )
-
 **Session Expiration**
 
 Configure appropriate session timeouts:
 
 .. code-block:: python
 
+    # Sessions are automatically renewed on each request
     session_config = ServerSideSessionConfig(
-        secret="your-secret-key",
         max_age=1800,  # 30 minutes
-        # Sessions are automatically renewed on each request
+        https_only=True,  # Require HTTPS in production
+        samesite="strict",  # CSRF protection
     )
 
 **Database Security**
@@ -780,7 +803,6 @@ Here's a complete working example:
 
     # Session configuration
     session_config = ServerSideSessionConfig(
-        secret="your-super-secret-key-change-in-production",
         max_age=3600,  # 1 hour
     )
 
